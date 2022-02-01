@@ -1,8 +1,6 @@
 import 'dart:async';
 import 'dart:math';
-
 import 'package:flutter/material.dart';
-import 'package:flutter/widgets.dart';
 
 typedef ColorCodeBuilder = Widget Function(BuildContext context, Color color);
 
@@ -25,7 +23,7 @@ class CircleColorPicker extends StatefulWidget {
     this.onChanged,
     this.onEnded,
     this.size = const Size(280, 280),
-    this.strokeWidth = 2,
+    this.strokeWidth = 10,
     this.thumbSize = 32,
     this.controller,
     this.textStyle = const TextStyle(
@@ -122,56 +120,47 @@ class _CircleColorPickerState extends State<CircleColorPicker>
             },
           ),
           AnimatedBuilder(
-            animation: _hueController,
-            builder: (context, child) {
-              return AnimatedBuilder(
-                animation: _lightnessController,
-                builder: (context, _) {
-                  return Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        widget.colorCodeBuilder != null
-                            ? widget.colorCodeBuilder!(context, _color)
-                            : Text(
-                                '#${_color.value.toRadixString(16).substring(2)}',
-                                style: widget.textStyle,
-                              ),
-                        const SizedBox(height: 16),
-                        Container(
-                          width: 64,
-                          height: 64,
-                          decoration: BoxDecoration(
-                            color: _color,
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              width: 3,
-                              color: HSLColor.fromColor(_color)
-                                  .withLightness(
-                                    _lightnessController.value * 4 / 5,
-                                  )
-                                  .toColor(),
-                            ),
+            animation: _lightnessController,
+            builder: (context, _) {
+              return Center(
+                child: Stack(
+                  children: <Widget>[
+                    Center(
+                      child: _LightnessPicker(
+                        size: Size(180, 180),
+                        thumbSize: 20,
+                        hue: _hueController.value,
+                        lightness: _lightnessController.value,
+                        onEnded: _onEnded,
+                        onChanged: (lightness) {
+                          _lightnessController.value = lightness;
+                        },
+                        strokeWidth: 4,
+                      ),
+                    ),
+                    Center(
+                      child: Container(
+                        width: 64,
+                        height: 64,
+                        decoration: BoxDecoration(
+                          color: _color,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            width: 3,
+                            color: HSLColor.fromColor(_color)
+                                .withLightness(
+                                  _lightnessController.value * 4 / 5,
+                                )
+                                .toColor(),
                           ),
                         ),
-                        const SizedBox(height: 16),
-                        _LightnessSlider(
-                          width: 140,
-                          thumbSize: 26,
-                          hue: _hueController.value,
-                          lightness: _lightnessController.value,
-                          onEnded: _onEnded,
-                          onChanged: (lightness) {
-                            _lightnessController.value = lightness;
-                          },
-                        ),
-                      ],
+                      ),
                     ),
-                  );
-                },
+                  ],
+                ),
               );
             },
-          ),
+          )
         ],
       ),
     );
@@ -224,7 +213,7 @@ class _LightnessSlider extends StatefulWidget {
     Key? key,
     required this.hue,
     required this.lightness,
-    required this.width,
+    required this.size,
     required this.onChanged,
     required this.onEnded,
     required this.thumbSize,
@@ -234,7 +223,7 @@ class _LightnessSlider extends StatefulWidget {
 
   final double lightness;
 
-  final double width;
+  final Size size;
 
   final ValueChanged<double> onChanged;
 
@@ -253,6 +242,10 @@ class _LightnessSliderState extends State<_LightnessSlider>
 
   @override
   Widget build(BuildContext context) {
+    final minSize = min(widget.size.height, widget.size.width);
+    final offset = _CircleTween(
+      minSize / 2 - widget.thumbSize / 2,
+    ).lerp(widget.lightness * pi / 180);
     return GestureDetector(
       onPanDown: _onDown,
       onPanCancel: _onCancel,
@@ -263,41 +256,31 @@ class _LightnessSliderState extends State<_LightnessSlider>
       onVerticalDragUpdate: _onUpdate,
       onVerticalDragEnd: _onEnd,
       child: SizedBox(
-        width: widget.width,
+        width: widget.size.width,
         height: widget.thumbSize,
         child: Stack(
           alignment: Alignment.centerLeft,
           children: <Widget>[
-            Container(
-              width: double.infinity,
-              height: 12,
-              margin: EdgeInsets.symmetric(
-                horizontal: widget.thumbSize / 3,
-              ),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.all(Radius.circular(6)),
-                gradient: LinearGradient(
-                  stops: [0, 0.4, 1],
-                  colors: [
-                    HSLColor.fromAHSL(1, widget.hue, 1, 0).toColor(),
-                    HSLColor.fromAHSL(1, widget.hue, 1, 0.5).toColor(),
-                    HSLColor.fromAHSL(1, widget.hue, 1, 0.9).toColor(),
-                  ],
+            SizedBox.expand(
+              child: Padding(
+                padding: EdgeInsets.all(
+                  widget.thumbSize / 2,
+                ),
+                child: CustomPaint(
+                  painter: _CircleLightnessPickerPainter(
+                      widget.size.width, widget.hue),
                 ),
               ),
             ),
             Positioned(
-              left: widget.lightness * (widget.width - widget.thumbSize),
+              left: offset.dx,
+              top: offset.dy,
               child: ScaleTransition(
                 scale: _scaleController,
                 child: _Thumb(
                   size: widget.thumbSize,
-                  color: HSLColor.fromAHSL(
-                    1,
-                    widget.hue,
-                    1,
-                    widget.lightness,
-                  ).toColor(),
+                  color: HSLColor.fromAHSL(1, widget.hue, 1, widget.lightness)
+                      .toColor(),
                 ),
               ),
             ),
@@ -321,17 +304,17 @@ class _LightnessSliderState extends State<_LightnessSlider>
 
   void _onDown(DragDownDetails details) {
     _scaleController.reverse();
-    widget.onChanged(details.localPosition.dx / widget.width);
+    widget.onChanged(details.localPosition.dx / widget.size.width);
   }
 
   void _onStart(DragStartDetails details) {
     _cancelTimer?.cancel();
     _cancelTimer = null;
-    widget.onChanged(details.localPosition.dx / widget.width);
+    widget.onChanged(details.localPosition.dx / widget.size.width);
   }
 
   void _onUpdate(DragUpdateDetails details) {
-    widget.onChanged(details.localPosition.dx / widget.width);
+    widget.onChanged(details.localPosition.dx / widget.size.height);
   }
 
   void _onEnd(DragEndDetails details) {
@@ -348,6 +331,142 @@ class _LightnessSliderState extends State<_LightnessSlider>
         widget.onEnded();
       },
     );
+  }
+}
+
+class _LightnessPicker extends StatefulWidget {
+  const _LightnessPicker({
+    Key? key,
+    required this.hue,
+    required this.lightness,
+    required this.size,
+    required this.onChanged,
+    required this.onEnded,
+    required this.thumbSize,
+    required this.strokeWidth,
+  }) : super(key: key);
+
+  final double hue;
+
+  final double lightness;
+
+  final ValueChanged<double> onChanged;
+
+  final VoidCallback onEnded;
+
+  final Size size;
+
+  final double strokeWidth;
+
+  final double thumbSize;
+
+  @override
+  _LightnessPickerState createState() => _LightnessPickerState();
+}
+
+class _LightnessPickerState extends State<_LightnessPicker>
+    with TickerProviderStateMixin {
+  late AnimationController _scaleController;
+  Timer? _cancelTimer;
+
+  @override
+  Widget build(BuildContext context) {
+    final minSize = min(widget.size.width, widget.size.height);
+    final offset = _CircleTween(
+      minSize / 2 - widget.thumbSize / 2,
+    ).lerp(widget.lightness * 2 * pi);
+    return GestureDetector(
+      onPanDown: _onDown,
+      onPanCancel: _onCancel,
+      onHorizontalDragStart: _onStart,
+      onHorizontalDragUpdate: _onUpdate,
+      onHorizontalDragEnd: _onEnd,
+      onVerticalDragStart: _onStart,
+      onVerticalDragUpdate: _onUpdate,
+      onVerticalDragEnd: _onEnd,
+      child: SizedBox(
+        width: widget.size.width,
+        height: widget.size.height,
+        child: Stack(
+          children: <Widget>[
+            SizedBox.expand(
+              child: Padding(
+                padding: EdgeInsets.all(
+                  widget.thumbSize / 2 - widget.strokeWidth,
+                ),
+                child: CustomPaint(
+                  painter: _CircleLightnessPickerPainter(
+                      widget.strokeWidth, widget.hue),
+                ),
+              ),
+            ),
+            Positioned(
+              left: offset.dx,
+              top: offset.dy,
+              child: ScaleTransition(
+                scale: _scaleController,
+                child: _Thumb(
+                  size: widget.thumbSize,
+                  color: HSLColor.fromAHSL(1, widget.hue, 1, 0.5).toColor(),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  void initState() {
+    super.initState();
+
+    _scaleController = AnimationController(
+      vsync: this,
+      value: 1,
+      lowerBound: 0.9,
+      upperBound: 1,
+      duration: Duration(milliseconds: 50),
+    );
+  }
+
+  void _onDown(DragDownDetails details) {
+    _scaleController.reverse();
+    _updatePosition(details.localPosition);
+  }
+
+  void _onStart(DragStartDetails details) {
+    _cancelTimer?.cancel();
+    _cancelTimer = null;
+    _updatePosition(details.localPosition);
+  }
+
+  void _onUpdate(DragUpdateDetails details) {
+    _updatePosition(details.localPosition);
+  }
+
+  void _onEnd(DragEndDetails details) {
+    _scaleController.forward();
+    widget.onEnded();
+  }
+
+  void _onCancel() {
+    // ScaleDown Animation cancelled if onDragStart called immediately
+    _cancelTimer = Timer(
+      const Duration(milliseconds: 5),
+      () {
+        _scaleController.forward();
+        widget.onEnded();
+      },
+    );
+  }
+
+  void _updatePosition(Offset position) {
+    final radians = atan2(
+      position.dy - widget.size.height / 2,
+      position.dx - widget.size.width / 2,
+    );
+    widget.onChanged(radians % (2 * pi) * 1 / pi);
   }
 }
 
@@ -408,7 +527,7 @@ class _HuePickerState extends State<_HuePicker> with TickerProviderStateMixin {
                   widget.thumbSize / 2 - widget.strokeWidth,
                 ),
                 child: CustomPaint(
-                  painter: _CirclePickerPainter(widget.strokeWidth),
+                  painter: _CircleHuePickerPainter(widget.strokeWidth),
                 ),
               ),
             ),
@@ -502,8 +621,48 @@ class _CircleTween extends Tween<Offset> {
   }
 }
 
-class _CirclePickerPainter extends CustomPainter {
-  const _CirclePickerPainter(
+class _CircleLightnessPickerPainter extends CustomPainter {
+  const _CircleLightnessPickerPainter(
+    this.strokeWidth,
+    this.hue,
+  );
+
+  final double strokeWidth;
+  final double hue;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    Offset center = Offset(size.width / 2, size.height / 2);
+    double radio = min(size.width, size.height) / 2 - strokeWidth;
+
+    SweepGradient sweepGradient = new SweepGradient(
+      colors: [
+        HSLColor.fromAHSL(1, hue, 1, 0).toColor(),
+        HSLColor.fromAHSL(1, hue, 1, 0.5).toColor(),
+        HSLColor.fromAHSL(1, hue, 1, 0.9).toColor(),
+      ],
+    );
+
+    final sweepShader = sweepGradient.createShader(
+      Rect.fromCircle(center: center, radius: radio),
+    );
+
+    canvas.drawCircle(
+      center,
+      radio,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = strokeWidth * 2
+        ..shader = sweepShader,
+    );
+  }
+
+  @override
+  bool shouldRepaint(CustomPainter oldDelegate) => true;
+}
+
+class _CircleHuePickerPainter extends CustomPainter {
+  const _CircleHuePickerPainter(
     this.strokeWidth,
   );
 
